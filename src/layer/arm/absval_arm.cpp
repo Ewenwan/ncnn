@@ -85,21 +85,26 @@ v8:
 #if __ARM_NEON
 // arm_v8================================
 #if __aarch64__ // ARMv8-A 是首款64 位架构的ARM 处理器，是移动手机端使用的CPU
-        if (nn > 0)
+        if (nn > 0)// 这里的循环次数已经是 除以4之后的了
         {
         asm volatile(
             "0:                               \n" // 0: 作为标志，局部标签
-            "prfm       pldl1keep, [%1, #128] \n"
-            "ld1        {v0.4s}, [%1]         \n"
-            "fabs       v0.4s, v0.4s          \n"
-            "subs       %w0, %w0, #1          \n"
-            "st1        {v0.4s}, [%1], #16    \n"
-            "bne        0b                    \n"
-            : "=r"(nn),     // %0
-              "=r"(ptr)     // %1
-            : "0"(nn),
+            "prfm       pldl1keep, [%1, #128] \n" // %1处为ptr标识为1标识,即数据地址，预取 128个字节 4*32 = 128
+            "ld1        {v0.4s}, [%1]         \n" // 载入 ptr 指针对应的值，连续4个
+            "fabs       v0.4s, v0.4s          \n" // ptr 指针对应的值 连续4个，使用fabs函数 进行绝对值操作 4s表示浮点数
+            "subs       %w0, %w0, #1          \n" // %0 引用 参数 nn 操作次数每次 -1  #1表示1
+            "st1        {v0.4s}, [%1], #16    \n" // %1 引用 参数 ptr 指针 向前移动 4*4=16字节
+            "bne        0b                    \n" // 如果非0，则向后跳转到 0标志处执行
+            
+            // 每个操作数的寄存器行为 “=”，表示此操作数类型是只写，即输出寄存器。
+            : "=r"(nn),     // %0 操作次数 nn  循环变量
+              "=r"(ptr)     // %1 引用参数 ptr 数据内存地址指针
+            
+             // 数据 标签标识 nn 标识为0  ptr标识为1
+            : "0"(nn),  
               "1"(ptr)
-            : "cc", "memory", "v0"
+            // 寄存器变化表　list of clobbered registers  
+            : "cc", "memory", "v0" // v0寄存器，内存memory，cc??可能会变化
         );
         }
 #else
@@ -108,27 +113,30 @@ v8:
         if (nn > 0)
         {
         asm volatile(
-            "0:                             \n"
-            "vld1.f32   {d0-d1}, [%1]       \n"
-            "vabs.f32   q0, q0              \n"
-            "subs       %0, #1              \n"
-            "vst1.f32   {d0-d1}, [%1]!      \n"
-            "bne        0b                  \n"
+            "0:                             \n" // 0: 作为标志，局部标签
+            "vld1.f32   {d0-d1}, [%1]       \n" // %1处为ptr标识为1标识,即数据地址，
+            "vabs.f32   q0, q0              \n" // q0寄存器 = [d1 d0]，128位寄存器，取出四个 float 单精度浮点数
+            "subs       %0, #1              \n" // %0为 循环变量nn标识，标识循环次数-1  #1表示1
+            "vst1.f32   {d0-d1}, [%1]!      \n" // ??????
+            "bne        0b                  \n" // 如果非0，则向后跳转到 0标志处执行
+            // 每个操作数的寄存器行为 “=”，表示此操作数类型是只写，即输出寄存器。
             : "=r"(nn),     // %0
               "=r"(ptr)     // %1
+            // 数据 标签标识 nn 标识为0  ptr标识为1
             : "0"(nn),
               "1"(ptr)
-            : "cc", "memory", "q0"
+            // 寄存器变化表　list of clobbered registers  
+            : "cc", "memory", "q0"// q0寄存器，内存memory，cc??可能会变化
         );
         }
 #endif // __aarch64__
 #endif // __ARM_NEON
         
-        for (; remain>0; remain--)
+        // 剩余不够4个的直接c语言执行=====
+        for (; remain>0; remain--)// 循环次数-1
         {
-            *ptr = *ptr > 0 ? *ptr : -*ptr;
-
-            ptr++;
+            *ptr = *ptr > 0 ? *ptr : - *ptr;
+            ptr++;// 指针+1
         }
     }
 
